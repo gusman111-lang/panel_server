@@ -40,53 +40,52 @@ def zapisz_stan(dane):
         with open(STAN_PLIK, 'w', encoding='utf-8') as f:
             json.dump(dane, f, indent=4, ensure_ascii=False)
 
-# ----------------------------------------------------
-# ENDPOINT 1: ODBIORNIK WEBHOOKA (dla TradingView)
-# ----------------------------------------------------
-# Ten endpoint będzie nasłuchiwał na żądania POST z TradingView
-# Adres: http://TWOJADOMENA.com/webhook
-# ----------------------------------------------------
 
+# ----------------------------------------------------
+# ENDPOINT 1: ODBIORNIK WEBHOOKA (NOWA, POPRAWIONA WERSJA)
+# ----------------------------------------------------
 @app.route('/webhook', methods=['POST'])
 def handle_webhook():
-    # Pobierz dane JSON wysłane przez TradingView
-    dane_z_tv = request.json
+    print("--- OTRZYMANO ŻĄDANIE WEBHOOK ---")
 
-    # --- BEZPIECZEŃSTWO (BARDZO WAŻNE!) ---
-    # Ustawiamy "sekretny klucz", aby nikt inny nie mógł wysyłać 
-    # danych do naszego serwera.
-    SEKRETNY_KLUCZ = "TwojSuperTajnyKlucz123" # ZMIEŃ TO!
+    dane_z_tv = None
+    try:
+        surowy_tekst = request.data.decode('utf-8')
+        if not surowy_tekst:
+            print("[BŁĄD] Żądanie Webhooka było puste.")
+            abort(400)
 
-    # Sprawdzamy, czy dane z TV zawierają poprawny klucz
+        print(f"Otrzymano surowy tekst: {surowy_tekst}")
+        dane_z_tv = json.loads(surowy_tekst)
+    except Exception as e:
+        print(f"[KRYTYCZNY BŁĄD] Nie można sparsować JSON. Błąd: {e}")
+        print(f"Dane, które spowodowały błąd: {request.data}")
+        abort(400)
+
+    # Kontrola bezpieczeństwa
+    SEKRETNY_KLUCZ = "TwojSuperTajnyKlucz123"
     if not dane_z_tv or 'sekret' not in dane_z_tv or dane_z_tv['sekret'] != SEKRETNY_KLUCZ:
-        print(f"Odrzucono żądanie: Błędny klucz lub brak danych.")
-        abort(403)  # Forbidden (Odmowa dostępu)
+        print(f"[ODRZUCONO] Błędny klucz bezpieczeństwa lub brak danych.")
+        abort(403)
 
-    # Dane są bezpieczne, przetwarzamy je
-    print(f"Otrzymano dane: {dane_z_tv}")
+    print(f"[SUKCES] Dane poprawnie sparsowane: {dane_z_tv}")
 
-    # Kluczowe dane (możemy je dowolnie zdefiniować w Pine Script)
-    interwal = dane_z_tv.get('interwal') # np. "1h"
-    kolumna = dane_z_tv.get('kolumna')   # np. "EMA_Krotka"
-    wartosc = dane_z_tv.get('wartosc')   # np. "KUPUJ"
+    interwal = dane_z_tv.get('interwal')
+    kolumna = dane_z_tv.get('kolumna')
+    wartosc = dane_z_tv.get('wartosc')
 
     if not all([interwal, kolumna, wartosc]):
-        print("Odrzucono: Brakujące dane (interwal, kolumna, wartosc)")
+        print("[BŁĄD] Brakujące klucze w JSON (interwal, kolumna, wartosc)")
         return jsonify({"status": "błąd", "wiadomość": "Brakujące dane"}), 400
 
-    # 1. Odczytaj aktualny stan panelu z pliku
     aktualny_stan = odczytaj_stan()
-
-    # 2. Zaktualizuj stan (np. stan['1h']['EMA_Krotka'] = 'KUPUJ')
     if interwal not in aktualny_stan:
         aktualny_stan[interwal] = {}
-    
-    aktualny_stan[interwal][kolumna] = wartosc
 
-    # 3. Zapisz nowy stan z powrotem do pliku
+    aktualny_stan[interwal][kolumna] = wartosc
     zapisz_stan(aktualny_stan)
 
-    # 4. Odpowiedz TradingView, że wszystko jest OK
+    print(f"[ZAPISANO] Zaktualizowano {interwal} -> {kolumna} = {wartosc}")
     return jsonify({"status": "sukces", "wiadomość": f"Zaktualizowano {interwal}"})
 
 # ----------------------------------------------------
